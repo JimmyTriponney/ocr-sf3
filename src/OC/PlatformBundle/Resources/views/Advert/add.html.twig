@@ -13,8 +13,11 @@
   {{ include("OCPlatformBundle:Advert:form.html.twig") }}
 
   <p>
-    Vous éditez une annonce déjà existante, merci de ne pas changer
-    l'esprit général de l'annonce déjà publiée.
+    <h3>Formulaire d'annonce</h3>
+
+    <div class="well">
+      {{ form(form) }}
+    </div>
   </p>
 
 {% endblock %}

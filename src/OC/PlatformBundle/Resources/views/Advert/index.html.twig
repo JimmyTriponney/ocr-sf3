@@ -8,7 +8,7 @@
 
 {% block ocplatform_body %}
 
-  <h2>Liste des annonces</h2>
+  <h2>Liste des annonces {{ checkIfSpam('...') }}</h2>
 
   <ul>
     {% for advert in listAdverts %}

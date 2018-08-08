@@ -30,3 +30,8 @@ oc_platform_delete:
         _controller: OCPlatformBundle:Advert:delete
     requirements:
         id: \d+
+
+oc_platform_paramconverter:
+    path: /test/{json}
+    defaults:
+        _controller: "OCPlatformBundle:Advert:ParamConverter"

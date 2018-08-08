@@ -4,14 +4,29 @@
 
 namespace OC\PlatformBundle\Controller;
 
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\Security;
+
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter;
+
+use OC\PlatformBundle\Event\PlatformEvents;
+use OC\PlatformBundle\Event\MessagePostEvent;
+
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\FormType;
+use Symfony\Component\Form\Extension\Core\Type\SubmitType;
+use Symfony\Component\Form\Extension\Core\Type\TextareaType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
 
 use OC\PlatformBundle\Entity\Advert;
+use OC\PlatformBundle\Form\AdvertType;
+use OC\PlatformBundle\Form\AdvertEditType;
 use OC\PlatformBundle\Entity\Image;
 use OC\PlatformBundle\Entity\AdvertSkill;
 use OC\PlatformBundle\Entity\Application;
@@ -81,6 +96,14 @@ class AdvertController extends Controller
     FIN DEX EXEMPLES ET TEST */
 
 
+    /**
+    * @ParamConverter("json")
+    */
+    public function ParamConverterAction($json)
+    {
+        return new Response(print_r($json, true));
+    }
+
 
 
     public function indexAction($page)
@@ -88,9 +111,9 @@ class AdvertController extends Controller
         // On ne sait pas combien de pages il y a
         // Mais on sait qu'une page doit être supérieure ou égale à 1
         if ($page < 1) {
-        // On déclenche une exception NotFoundHttpException, cela va afficher
-        // une page d'erreur 404 (qu'on pourra personnaliser plus tard d'ailleurs)
-        throw new NotFoundHttpException('Page "'.$page.'" inexistante.');
+            // On déclenche une exception NotFoundHttpException, cela va afficher
+            // une page d'erreur 404 (qu'on pourra personnaliser plus tard d'ailleurs)
+            throw new NotFoundHttpException('Page "'.$page.'" inexistante.');
         }
 
 
@@ -123,10 +146,14 @@ class AdvertController extends Controller
           ));
     }
 
-    public function viewAction($id)
+    /**
+    * @ParamConverter("advert", options={"mapping": {"id": "id"}})
+    */
+    public function viewAction(Advert $advert)
     {
         //Entity manager
         $em = $this->getDoctrine()->getManager();
+        /*
         $advertRepository = $em->getRepository('OCPlatformBundle:Advert');
         //On récupére l'advert
         $advert = $advertRepository->find($id);
@@ -134,6 +161,7 @@ class AdvertController extends Controller
         if( null === $advert ){
             throw NotFoundHttpException("L'annonce n'existe pas.");
         }
+        */
 
         // On avait déjà récupéré la liste des candidatures
         $listApplications = $em
@@ -154,120 +182,94 @@ class AdvertController extends Controller
         ));
     }
 
+    /**
+     * Security("has_role('ROLE_AUTEUR')")
+     */
     public function addAction(Request $request)
     {
-        // La gestion d'un formulaire est particulière, mais l'idée est la suivante :
+        $advert = new Advert();
+        $form   = $this->get('form.factory')->create(AdvertType::class, $advert);
 
-        // Si la requête est en POST, c'est que le visiteur a soumis le formulaire
-        if ($request->isMethod('POST')) {
-            // Ici, on s'occupera de la création et de la gestion du formulaire
+        if ($request->isMethod('POST') && $form->handleRequest($request)->isValid()) {
+
+            //Appel de l'événement
+            // On crée l'évènement avec ses 2 arguments
+            //$event = new MessagePostEvent($advert->getContent(), $advert->getUser());
+
+            // On déclenche l'évènement
+            //$this->get('event_dispatcher')->dispatch(PlatformEvents::POST_MESSAGE, $event);
+
+            // On récupère ce qui a été modifié par le ou les listeners, ici le message
+            //$advert->setContent($event->getMessage());
+
+            $em = $this->getDoctrine()->getManager();
+            $em->persist($advert);
+            $em->flush();
 
             $request->getSession()->getFlashBag()->add('notice', 'Annonce bien enregistrée.');
 
-
-            // Puis on redirige vers la page de visualisation de cettte annonce
-            return $this->redirectToRoute('oc_platform_view', array('id' => 5));
+            return $this->redirectToRoute('oc_platform_view', array('id' => $advert->getId()));
         }
 
-        //Enregistrement en dure d'une annonce
-        /* CREATION DE L'ANNONCE */
-        // Création de l'entité
-        $advert = new Advert();
-        $advert->setTitle('Recherche développeur Symfony.');
-        $advert->setAuthor('j.triponney@jeannin-automobiles.com');
-        $advert->setContent("Nous recherchons un développeur Symfony débutant sur Lyon. Blabla…");
-        /* CREATION DE L'IMAGE */
-        //Création de l'image de l'annonce
-        $image = new Image();
-        $image->setUrl('https://i2.wp.com/beebom.com/wp-content/uploads/2016/01/Reverse-Image-Search-Engines-Apps-And-Its-Uses-2016.jpg?resize=640%2C426');
-        $image->setAlt('Petit chaton');
-        //On lie l'image à l'annonce
-        $advert->setImage($image);
-        /* AJOUT DES CATEGORIES */
-        // La méthode findAll retourne toutes les catégories de la base de données
-        $em = $this->getDoctrine()->getManager();
-        $listCategories = $em->getRepository('OCPlatformBundle:Category')->findAll();
-        // On boucle sur les catégories pour les lier à l'annonce
-        foreach ($listCategories as $category) {
-            $advert->addCategory($category);
-        }
-        /* AJOUT DES COMPETENCES */
-        // On récupère toutes les compétences possibles
-        $listSkills = $em->getRepository('OCPlatformBundle:Skill')->findAll();
-        // Pour chaque compétence
-        foreach ($listSkills as $skill) {
-            // On crée une nouvelle « relation entre 1 annonce et 1 compétence »
-            $advertSkill = new AdvertSkill();
-
-            // On la lie à l'annonce, qui est ici toujours la même
-            $advertSkill->setAdvert($advert);
-            // On la lie à la compétence, qui change ici dans la boucle foreach
-            $advertSkill->setSkill($skill);
-
-            // Arbitrairement, on dit que chaque compétence est requise au niveau 'Expert'
-            $advertSkill->setLevel('Expert');
-
-            // Et bien sûr, on persiste cette entité de relation, propriétaire des deux autres relations
-            $em->persist($advertSkill);
-        }
-        /* AJOUT D'UNE CANDIDATURE */
-        $application = new Application();
-        $advert->addApplication($application);
-
-        $em->persist($advert);
-        $em->flush();
-
-        //Test avec le service Antispam
-        // On récupère le service
-        $antispam = $this->get('oc_platform.antispam');
-        // Je pars du principe que $text contient le texte d'un message quelconque
-        $text = '...';
-        if ($antispam->isSpam($text)) {
-            throw new \Exception('Votre message a été détecté comme spam !');
-        }
-
-        // Si on n'est pas en POST, alors on affiche le formulaire
-        return $this->render('OCPlatformBundle:Advert:add.html.twig');
+        return $this->render('OCPlatformBundle:Advert:add.html.twig', array(
+        'form' => $form->createView(),
+        ));
     }
 
     public function editAction($id, Request $request)
     {
-        $advert = array(
-            'title'   => 'Recherche développpeur Symfony',
-            'id'      => $id,
-            'author'  => 'Alexandre',
-            'content' => 'Nous recherchons un développeur Symfony débutant sur Lyon. Blabla…',
-            'date'    => new \Datetime()
-          );
-      
-          return $this->render('OCPlatformBundle:Advert:edit.html.twig', array(
-            'advert' => $advert
-          ));
-    }
-
-    public function deleteAction($id)
-    {
         $em = $this->getDoctrine()->getManager();
 
-        // On récupère l'annonce $id
         $advert = $em->getRepository('OCPlatformBundle:Advert')->find($id);
 
         if (null === $advert) {
         throw new NotFoundHttpException("L'annonce d'id ".$id." n'existe pas.");
         }
 
-        // On boucle sur les catégories de l'annonce pour les supprimer
-        foreach ($advert->getCategories() as $category) {
-        $advert->removeCategory($category);
-        }
+        $form = $this->get('form.factory')->create(AdvertEditType::class, $advert);
 
-        // Pour persister le changement dans la relation, il faut persister l'entité propriétaire
-        // Ici, Advert est le propriétaire, donc inutile de la persister car on l'a récupérée depuis Doctrine
-
-        // On déclenche la modification
+        if ($request->isMethod('POST') && $form->handleRequest($request)->isValid()) {
+        // Inutile de persister ici, Doctrine connait déjà notre annonce
         $em->flush();
 
-        return new Response('Catégories supprimer.');
+        $request->getSession()->getFlashBag()->add('notice', 'Annonce bien modifiée.');
+
+        return $this->redirectToRoute('oc_platform_view', array('id' => $advert->getId()));
+        }
+
+        return $this->render('OCPlatformBundle:Advert:edit.html.twig', array(
+        'advert' => $advert,
+        'form'   => $form->createView(),
+        ));
+    }
+
+    public function deleteAction(Request $request, $id)
+    {
+        $em = $this->getDoctrine()->getManager();
+
+        $advert = $em->getRepository('OCPlatformBundle:Advert')->find($id);
+
+        if (null === $advert) {
+        throw new NotFoundHttpException("L'annonce d'id ".$id." n'existe pas.");
+        }
+
+        // On crée un formulaire vide, qui ne contiendra que le champ CSRF
+        // Cela permet de protéger la suppression d'annonce contre cette faille
+        $form = $this->get('form.factory')->create();
+
+        if ($request->isMethod('POST') && $form->handleRequest($request)->isValid()) {
+        $em->remove($advert);
+        $em->flush();
+
+        $request->getSession()->getFlashBag()->add('info', "L'annonce a bien été supprimée.");
+
+        return $this->redirectToRoute('oc_platform_home');
+        }
+        
+        return $this->render('OCPlatformBundle:Advert:delete.html.twig', array(
+        'advert' => $advert,
+        'form'   => $form->createView(),
+        ));
     }
 
     public function menuAction($limit)
@@ -287,6 +289,20 @@ class AdvertController extends Controller
         ));
     }
 
+
+    public function translationAction($name)
+    {
+
+        // On récupère le service translator
+        $translator = $this->get('translator');
+
+        // Pour traduire dans la locale de l'utilisateur :
+        $texteTraduit = $translator->trans('Mon message à inscrire dans les logs');
+
+        return $this->render('OCPlatformBundle:Advert:translation.html.twig', array(
+        'name' => $name
+        ));
+    }
 
   
 }
